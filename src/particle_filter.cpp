@@ -24,6 +24,31 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	//   x, y, theta and their uncertainties from GPS) and all weights to 1. 
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
+  
+  default_random_engine gen;
+  
+  // Create a normal (Gaussian) distribution for x, y and theta
+  normal_distribution<double> dist_x(x, std[0]);
+  normal_distribution<double> dist_y(y, std[1]);
+  normal_distribution<double> dist_theta(theta, std[2]);
+  
+  // Set the number of particles to something for now
+  num_particles = 100;
+  
+  for (int i = 0; i < num_particles; ++i) {
+    
+    Particle p;
+    
+    // Sample from the above normal distrubtions for each particle
+    p.x = dist_x(gen);
+    p.y = dist_y(gen);
+    p.theta = dist_theta(gen);
+    p.weight = 1;
+    
+    particles.push_back(p);
+  }
+  
+  is_initialized = true;
 
 }
 
@@ -32,6 +57,53 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	// NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
+  
+  //When yaw_rate = 0; the final positions are calculated as:
+  // xf = x0 + v.dt.(cos(yaw)) where cos(yaw) is the x component of the velocity
+  // yf = y0 + v.dt.(sin(yaw)) where sin(yaw) is the y component of the velocity
+  // yawf = yaw
+  
+  //when yaw_rate != 0; the final positions are calculated as:
+  // xf = x0 + [v.(sin(yaw + yaw_rate.dt) - sin(yaw)) / yaw_rate] --> (1)
+  // yf = y0 + [v.(cos(yaw) - cos(yaw + yaw_rate.dt)) / yaw_rate] --> (2)
+  // yawf = yaw + yaw_rate.dt --> (3)
+  
+  // Using equations (1), (2) and (3) for predictiions:
+  
+  for (int i = 0; i < num_particles; ++i) {
+    
+    double cur_x = particles[i].x;
+    double cur_y = particles[i].y;
+    double cur_theta = particles[i].theta;
+  
+    //Predict x, y and theta
+    double pred_x = cur_x;
+    double pred_y = cur_y;
+    double pred_theta = cur_theta;
+    if(fabs(yaw_rate) < 0.0001) {
+      pred_x = cur_x + velocity * delta_t * cos(cur_theta);
+      pred_y = cur_y + velocity * delta_t * sin(cur_theta);
+      pred_theta = cur_theta;
+    }
+    else {
+      pred_x = cur_x + (velocity * delta_t * (sin(cur_theta + yaw_rate * delta_t) - sin(cur_theta)) / yaw_rate);
+      pred_y = cur_y + (velocity * delta_t * (cos(cur_theta) - cos(cur_theta + yaw_rate * delta_t)) / yaw_rate);
+      pred_theta = cur_theta + yaw_rate * delta_t;
+    }
+    
+    default_random_engine gen;
+    
+    // Create a normal (Gaussian) distribution for predicted x, y and theta
+    normal_distribution<double> dist_x(pred_x, std_pos[0]);
+    normal_distribution<double> dist_y(pred_x, std_pos[1]);
+    normal_distribution<double> dist_theta(pred_x, std_pos[2]);
+    
+    //Add above noise to the prediction and set
+    particles[i].x = pred_x + dist_x(gen);
+    particles[i].y = pred_y + dist_y(gen);
+    particles[i].theta = pred_theta + dist_theta(gen);
+    
+  }
 
 }
 
