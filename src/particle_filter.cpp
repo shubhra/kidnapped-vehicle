@@ -38,6 +38,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   for (int i = 0; i < num_particles; ++i) {
     
     Particle p;
+    p.id = i;
     
     // Sample from the above normal distrubtions for each particle
     p.x = dist_x(gen);
@@ -112,7 +113,27 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	//   observed measurement to this particular landmark.
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
+  
+  for (auto obs : observations) {
+    
+    // init min distance to a high value before we begin looping over all predicted landmark measurements
+    double min_dist = numeric_limits<double>::max();
+    
+    for (auto pred : predicted) {
+      
+      // calculate the distance b/w the current predicted landmark & the observed landmark measurement
+      double obs_pred_dist = dist(pred.x, pred.y, obs.x, obs.y);
+      
+      // if this distance is less than anything we've seen so far for this observed landmark measurement
+      // then update the association and the min_dist
+      if(obs_pred_dist < min_dist) {
+        min_dist = obs_pred_dist;
+        obs.id = pred.id;
+      }
+    }
+  }
 
+  
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -127,6 +148,70 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+  
+  
+  //pre-calculate the weight constants so we don't do it for each particle
+  const double a = 1 / (2 * M_PI * std_landmark[0] * std_landmark[1]);
+  const double x_denom = 1 / (2 * pow(std_landmark[0], 2));
+  const double y_denom = 1 / (2 * pow(std_landmark[1], 2));
+  
+  //Go over all the particles one by one
+  for (auto p : particles) {
+    
+    // this vector will hold all the map landmarks predicted to be in the sensor range of the cur particle
+    std::vector<LandmarkObs> predicted_landmark;
+    
+    // go over all the map landmarks and find which ones fall in the sensor range for this particle
+    int map_size = map_landmarks.landmark_list.size();
+    for (int i = 0; i < map_size; ++i) {
+      
+      // find the distance b/w this landmark and the current particle
+      double landmark_particle_dist = dist(p.x, p.y, map_landmarks.landmark_list[i].x_f,
+                                           map_landmarks.landmark_list[i].y_f);
+      
+      // check if the above distance is in the sensor range and add to predicted if it is
+      if( landmark_particle_dist < sensor_range)
+        predicted_landmark.push_back(LandmarkObs {map_landmarks.landmark_list[i].id_i,
+                                                  map_landmarks.landmark_list[i].x_f,
+                                                  map_landmarks.landmark_list[i].y_f});
+    }
+    
+    // this vector will hold the tranformed observations
+    std::vector<LandmarkObs> observations_transformed;
+    
+    // transform the observations from the vehicle's to map's coordinate system
+    for(auto obs : observations) {
+      double obs_trans_x, obs_trans_y;
+      obs_trans_x = obs.x * cos(p.theta) - obs.y * sin(p.theta) + p.x;
+      obs_trans_y = obs.x * sin(p.theta) + obs.y * cos(p.theta) + p.y;
+      observations_transformed.push_back(LandmarkObs{ obs.id, obs_trans_x, obs_trans_y });
+    }
+    
+    // now make an association based on which of the predicted landmarks is closest to the
+    // observed landmark from the current particle
+    dataAssociation(predicted_landmark, observations_transformed);
+    
+    // now calculate the new weight of the particle as the product of each measurement's
+    // Multivariate-Gaussian probability density
+    
+    // make sure the weight is set
+    p.weight = 1;
+    
+    // go over all transformed observations and find the associated prediction
+    // then calucate the weight
+    for (auto obs : observations_transformed) {
+      
+      for (auto pred : predicted_landmark) {
+        
+        if (pred.id == obs.id) {
+          double weight = a * exp( -( pow(pred.x - obs.x, 2) * x_denom) + (pow(pred.y - obs.y, 2) * y_denom));
+          p.weight *= weight;
+          break;
+        }
+      }
+    }
+    
+  }
 }
 
 void ParticleFilter::resample() {
