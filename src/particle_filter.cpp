@@ -25,22 +25,26 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
   
+  if (is_initialized) {
+    return;
+  }
+  
   default_random_engine gen;
   
-  // Create a normal (Gaussian) distribution for x, y and theta
+  // create a normal (Gaussian) distribution for x, y and theta
   normal_distribution<double> dist_x(x, std[0]);
   normal_distribution<double> dist_y(y, std[1]);
   normal_distribution<double> dist_theta(theta, std[2]);
   
-  // Set the number of particles to something for now
-  num_particles = 100;
+  // set the number of particles to something for now
+  num_particles = 1000;
   
   for (int i = 0; i < num_particles; ++i) {
     
     Particle p;
     p.id = i;
     
-    // Sample from the above normal distrubtions for each particle
+    // sample from the above normal distrubtions for each particle
     p.x = dist_x(gen);
     p.y = dist_y(gen);
     p.theta = dist_theta(gen);
@@ -69,7 +73,14 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
   // yf = y0 + [v.(cos(yaw) - cos(yaw + yaw_rate.dt)) / yaw_rate] --> (2)
   // yawf = yaw + yaw_rate.dt --> (3)
   
-  // Using equations (1), (2) and (3) for predictiions:
+  default_random_engine gen;
+  
+  // create a normal (Gaussian) distribution for predicted x, y and theta
+  normal_distribution<double> dist_x(0, std_pos[0]);
+  normal_distribution<double> dist_y(0, std_pos[1]);
+  normal_distribution<double> dist_theta(0, std_pos[2]);
+  
+  // using the above equations for predictiions:
   
   for (int i = 0; i < num_particles; ++i) {
     
@@ -77,29 +88,23 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
     double cur_y = particles[i].y;
     double cur_theta = particles[i].theta;
   
-    //Predict x, y and theta
-    double pred_x = cur_x;
-    double pred_y = cur_y;
-    double pred_theta = cur_theta;
+    // predict x, y and theta
+    double pred_x;
+    double pred_y;
+    double pred_theta;
+    
     if(fabs(yaw_rate) < 0.0001) {
       pred_x = cur_x + velocity * delta_t * cos(cur_theta);
       pred_y = cur_y + velocity * delta_t * sin(cur_theta);
       pred_theta = cur_theta;
     }
     else {
-      pred_x = cur_x + (velocity * delta_t * (sin(cur_theta + yaw_rate * delta_t) - sin(cur_theta)) / yaw_rate);
-      pred_y = cur_y + (velocity * delta_t * (cos(cur_theta) - cos(cur_theta + yaw_rate * delta_t)) / yaw_rate);
+      pred_x = cur_x + (velocity * (sin(cur_theta + yaw_rate * delta_t) - sin(cur_theta)) / yaw_rate);
+      pred_y = cur_y + (velocity * (-cos(cur_theta + yaw_rate * delta_t) + cos(cur_theta)) / yaw_rate);
       pred_theta = cur_theta + yaw_rate * delta_t;
     }
     
-    default_random_engine gen;
-    
-    // Create a normal (Gaussian) distribution for predicted x, y and theta
-    normal_distribution<double> dist_x(pred_x, std_pos[0]);
-    normal_distribution<double> dist_y(pred_x, std_pos[1]);
-    normal_distribution<double> dist_theta(pred_x, std_pos[2]);
-    
-    //Add above noise to the prediction and set
+    // add above noise to the prediction and set
     particles[i].x = pred_x + dist_x(gen);
     particles[i].y = pred_y + dist_y(gen);
     particles[i].theta = pred_theta + dist_theta(gen);
@@ -149,9 +154,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   http://planning.cs.uiuc.edu/node99.html
   
   //pre-calculate the weight constants so we don't do it for each particle
-  const double a = 1 / (2 * M_PI * std_landmark[0] * std_landmark[1]);
-  const double x_denom = 1 / (2 * pow(std_landmark[0], 2));
-  const double y_denom = 1 / (2 * pow(std_landmark[1], 2));
+  const double a = 1.0 / (2.0 * M_PI * std_landmark[0] * std_landmark[1]);
+  const double x_inv_denom = 1.0 / (2.0 * pow(std_landmark[0], 2));
+  const double y_inv_denom = 1.0 / (2.0 * pow(std_landmark[1], 2));
   
   //Go over all the particles one by one
   for (auto &p : particles) {
@@ -168,7 +173,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
                                            map_landmarks.landmark_list[i].y_f);
       
       // check if the above distance is in the sensor range and add to predicted if it is
-      if( landmark_particle_dist < sensor_range)
+      if( landmark_particle_dist <= sensor_range)
         predicted_landmark.push_back(LandmarkObs {map_landmarks.landmark_list[i].id_i,
                                                   map_landmarks.landmark_list[i].x_f,
                                                   map_landmarks.landmark_list[i].y_f});
@@ -179,6 +184,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     
     // transform the observations from the vehicle's to map's coordinate system
     for(auto obs : observations) {
+      
       double obs_trans_x, obs_trans_y;
       obs_trans_x = obs.x * cos(p.theta) - obs.y * sin(p.theta) + p.x;
       obs_trans_y = obs.x * sin(p.theta) + obs.y * cos(p.theta) + p.y;
@@ -196,16 +202,21 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     p.weight = 1;
     
     // go over all transformed observations and find the associated prediction
-    // then calucate the weight
+    // then calculate the weight
     for (auto obs : observations_transformed) {
 
       for (auto pred : predicted_landmark) {
 
         if (pred.id == obs.id) {
-
-          double weight = a * exp( -( pow(pred.x - obs.x, 2) * x_denom) + (pow(pred.y - obs.y, 2) * y_denom));
-          p.weight *= weight;
-          break;
+          
+          double x_diff2 = pow(obs.x - pred.x, 2);
+          double y_diff2 = pow(obs.y - pred.y, 2);
+          double b = exp( -( (x_diff2 * x_inv_denom) + (y_diff2 * y_inv_denom)));
+          double weight = a * b;
+          if (weight == 0)
+            p.weight *= 0.0001;
+          else
+            p.weight *= weight;
         }
       }
     }
@@ -250,7 +261,7 @@ void ParticleFilter::resample() {
       beta = beta - weights[index];
       index = (index + 1) % num_particles;
     }
-    
+
     // add the selected index to particles
     resampled_particles.push_back(particles[index]);
   }
