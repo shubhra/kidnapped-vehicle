@@ -36,7 +36,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   normal_distribution<double> dist_y(y, std[1]);
   normal_distribution<double> dist_theta(theta, std[2]);
   
-  // set the number of particles to something for now
+  // set the number of particles
   num_particles = 100;
   
   for (int i = 0; i < num_particles; ++i) {
@@ -63,12 +63,12 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
   
-  //When yaw_rate = 0; the final positions are calculated as:
+  // when yaw_rate = 0; the final positions are calculated as:
   // xf = x0 + v.dt.(cos(yaw)) where cos(yaw) is the x component of the velocity
   // yf = y0 + v.dt.(sin(yaw)) where sin(yaw) is the y component of the velocity
   // yawf = yaw
   
-  //when yaw_rate != 0; the final positions are calculated as:
+  // when yaw_rate != 0; the final positions are calculated as:
   // xf = x0 + [v.(sin(yaw + yaw_rate.dt) - sin(yaw)) / yaw_rate] --> (1)
   // yf = y0 + [v.(cos(yaw) - cos(yaw + yaw_rate.dt)) / yaw_rate] --> (2)
   // yawf = yaw + yaw_rate.dt --> (3)
@@ -158,7 +158,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   const double x_inv_denom = 1.0 / (2.0 * pow(std_landmark[0], 2));
   const double y_inv_denom = 1.0 / (2.0 * pow(std_landmark[1], 2));
   
-  //Go over all the particles one by one
+  // go over all the particles one by one
   for (auto &p : particles) {
     
     // this vector will hold all the map landmarks predicted to be in the sensor range of the cur particle
@@ -242,7 +242,7 @@ void ParticleFilter::resample() {
     weights.push_back(p.weight);
   }
 
-  //create a discrete distribution of the above weights to sample from
+  // create a discrete distribution of the above weights to sample from
   std::uniform_int_distribution<int>  discrete_distr(0, num_particles);
   
   // get a particle index uniformly from the set of all indices in sampler
@@ -256,6 +256,7 @@ void ParticleFilter::resample() {
   std::vector<Particle> resampled_particles;
   double beta = 0;
   for (int i = 0; i < num_particles; ++i) {
+     
     beta += continuous_distr(gen);
     while (weights[index] < beta) {
       beta = beta - weights[index];
